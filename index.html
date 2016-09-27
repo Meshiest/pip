@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+  <html>
+  <head>
+    <title>pip</title>
+    <style>
+html, body, canvas {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+}
+    </style>
+  </head>
+  <body>
+  <canvas id='canvas'>
+  </canvas>
+  <script>
+
+var GRID_WIDTH = 5;
+var GRID_HEIGHT = 5;
+
+window.PIPGAME = (function() {
+"use strict";
+
+class Pip {
+  constructor(canvas, width, height) {
+    this.gridWidth = width;
+    this.gridHeight = height;
+    
+    this.time  = Date.now();
+    this.deltaTime = 0;
+
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.colors = {
+      bg: "#ccccee"
+    };
+
+    this.resetGrid()
+
+    this.touches = {};  
+    this.initListeners();
+  }
+
+  /**
+    Resets the grid values to random unsolved
+  */
+  resetGrid(swap) { 
+    this.grid = {};
+    for(var x = 0; x < this.gridWidth; x++) {
+      this.grid[x] = {};
+      for(var y = 0; y < this.gridHeight; y++) {
+        this.grid[x][y] = {
+          connectors: this.randConnectors(),
+          connected: false,
+          slide: 0,
+          slideAxis: 0,
+          delta: 0,
+          deltaAxis: 0,
+        };
+      }
+    }
+
+    if(swap)
+      this.startPos = this.endPos;
+    else
+      this.startPos = Math.floor(Math.random() * this.gridHeight);
+    this.endPos = Math.floor(Math.random() * this.gridHeight);
+
+    this.recheckGrid();
+  }
+
+  /**
+    Initializes listeners for mouse clicks and touch events
+  */
+  initListeners() {
+    var supportsTouch = false;
+    if ('ontouchstart' in window) { //iOS & android
+      supportsTouch = true;
+    } else if(window.navigator.msPointerEnabled) {
+      supportsTouch = true;
+    }
+
+    var pip = this;
+    if(supportsTouch) {
+      canvas.addEventListener('touchstart', (e)=>{pip.onDragStart(e)})
+      canvas.addEventListener('touchmove', (e)=>{pip.onDrag(e)})
+      canvas.addEventListener('touchend', (e)=>{pip.onDragEnd(e)})
+    }
+    canvas.addEventListener('mousedown', (e)=>{pip.onDragStart(e)})
+    canvas.addEventListener('mousemove', (e)=>{pip.onDrag(e)})
+    canvas.addEventListener('mouseup', (e)=>{pip.onDragEnd(e)})
+  }
+
+  /**
+    Converts screen coords to game screen coords
+  */
+  screenToGame(x, y) {
+    var width = this.canvas.clientWidth;
+    var height = this.canvas.clientHeight;
+    var scale = Math.min(width, height);
+    return {
+      x: (x - width/2) / scale,
+      y: (y - height/2) / scale
+    }
+  }
+
+  /**
+    Callback for starting to drag mouse or touch
+  */
+  onDragStart(event) {
+    event.preventDefault();
+    if(event.type.match(/touch/)) {
+      for(var i = 0; i < event.changedTouches.length; i++) {
+        var touch = event.changedTouches[i];
+        var id = touch.identifier;
+        this.touches[id] = {
+          start: this.screenToGame(touch.pageX, touch.pageY),
+          drag: false,
+        };
+      }
+    } else {
+      this.touches.mouse = {
+        start: this.screenToGame(event.pageX, event.pageY),
+        drag: false,
+      };
+    }
+  }
+
+  /**
+    Callback for dragging mouse or touch
+  */
+  onDrag(event) {
+    event.preventDefault();
+    if(event.type.match(/touch/)) {
+      for(var i = 0; i < event.changedTouches.length; i++) {
+        var touch = event.changedTouches[i];
+        var id = touch.identifier;
+        var currTouch = this.touches[id];
+        currTouch.drag = true;
+        currTouch.end = this.screenToGame(touch.pageX, touch.pageY);
+      }
+    } else if(this.touches.mouse) {
+      this.touches.mouse.drag = true;
+      this.touches.mouse.end = this.screenToGame(event.pageX, event.pageY);
+    }
+
+  }
+
+  /**
+    Callback for ending the mouse or touch drag
+  */
+  onDragEnd(event) {
+    event.preventDefault();
+    if(event.type.match(/touch/)) {
+      for(var i = 0; i < event.changedTouches.length; i++) {
+        var touch = event.changedTouches[i];
+        var id = touch.identifier;
+        this.handleDragEnd(id);
+        delete this.touches[id];
+      }
+    } else {
+      this.handleDragEnd('mouse');
+      delete this.touches.mouse;
+    }
+  }
+
+  /**
+    Handles what drags do when they end
+  */
+  handleDragEnd(id) {
+    var touch = this.touches[id];
+    var copy = JSON.parse(JSON.stringify(this.grid))
+    for(var x = 0; x < this.gridWidth; x++) {
+      for(var y = 0; y < this.gridHeight; y++) {
+        var cell = copy[x][y];
+        if(cell.touch == id) {
+          var xOff = Math.round(x + cell.slide * cell.slideAxis) % this.gridWidth;
+          var yOff = Math.round(y + cell.slide * (1-cell.slideAxis)) % this.gridHeight;
+          cell.touch = undefined;
+          cell.delta = cell.slide-(cell.slideAxis ? (xOff-x) : (yOff-y));
+          if(cell.delta > 1) {
+            cell.delta -= (cell.slideAxis ? this.gridWidth : this.gridHeight);
+          }
+
+          cell.deltaAxis = cell.slideAxis;
+          cell.slide = 0;
+          cell.slideAxis = 0;
+          this.grid[xOff][yOff] = cell;
+        }
+      }
+    }
+    this.recheckGrid();
+  }
+
+  /**
+    Recalculates the current path from start
+  */
+  recheckGrid() {
+    for(var x = 0; x < this.gridWidth; x++) {
+      for(var y = 0; y < this.gridHeight; y++) {
+        this.grid[x][y].connected = false;
+      }
+    }
+    var currPos = {x: 0, y: this.startPos};
+    var lastPos = {x: -1, y: this.startPos};
+    while(this.checkCellLink(currPos, lastPos)) {
+      var cell = this.grid[currPos.x][currPos.y]
+      cell.connected = true;
+      lastPos = currPos;
+      currPos = this.nextCell(currPos.x, currPos.y);
+    }
+    console.log(lastPos, {x: this.gridWidth, y: this.endPos})
+    if(this.checkCellLink(lastPos, {x: this.gridWidth, y: this.endPos})) {
+      this.resetGrid(true);
+    }
+  }
+
+  /**
+    Checks if a cell is adjacent to a connected cell or the start
+  */
+  isConnectedCell(x, y) {
+    // pointing to start pos
+    if(x == -1 && y == this.startPos) {
+      return true;
+    }
+
+    if(!this.posInGrid({x: x, y: y}))
+      return false;
+
+    var cell = this.grid[x][y];
+    if(!cell)
+      return false;
+
+    if(cell.connected)
+      return true;
+
+    return false;
+  }
+
+  /**
+    checks if the pos is on the grid
+  */
+  posInGrid(pos) {
+    if(!pos)
+      return false;
+
+    // x is out of bounds
+    if(pos.x < 0 || pos.x >= this.gridWidth)
+      return false;
+
+    // y is out of bounds
+    if(pos.y < 0 || pos.y >= this.gridHeight)
+      return false;
+
+    return true;
+  }
+
+  /**
+    checks if two cells connect to eachother
+  */
+  isCellLinked(posA, posB) {
+    if(!this.posInGrid(posA) || !this.posInGrid(posB))
+      return false;
+    return this.checkCellLink(posA, posB) && this.checkCellLink(posB, posA)
+  }
+
+  /**
+    Checks if a cell is pointing at a position
+  */
+  checkCellLink(startPos, endPos) {
+    if(!this.posInGrid(startPos))
+      return false;
+    var cell = this.grid[startPos.x][startPos.y]
+    for(var i = 0; i < cell.connectors.length; i++) {
+      var link = cell.connectors[i];
+      if(startPos.x + link.x == endPos.x && startPos.y + link.y == endPos.y)
+        return true;
+    }
+
+    return false;
+  }
+
+  /**
+    Gets the next un-connected cell
+  */
+  nextCell(x, y) {
+    if(!this.posInGrid({x: x, y: y}))
+      return;
+
+    var cell = this.grid[x][y];
+
+    for(var i = 0; i < cell.connectors.length; i++) {
+      var link = cell.connectors[i];
+      // check if next cell is in grid
+      if(!this.posInGrid({x: x+link.x, y: y+link.y}))
+        continue;
+
+      var linkConnected = this.isConnectedCell(x + link.x, y + link.y);
+      if(!linkConnected)
+        return {x: x+link.x, y: y+link.y}
+    }
+    return;
+  }
+
+  /**
+    Starts the game
+  */
+  start() {
+    this.stop();
+    var pip = this;
+    this.interval = setInterval(function(){
+      pip.loop();
+    }, 0);
+    return this;
+  }
+
+  /**
+    Stops the game
+  */
+  stop() {
+    clearInterval(this.interval);
+    return this;
+  }
+
+  /**
+    Called every interval
+  */
+  loop() {
+    var now = Date.now();
+    this.deltaTime = (now - this.time) / 1000;
+    this.time = now;
+    this.tick();
+    this.draw();
+  }
+
+  /**
+    Calculates positions and collisions in the game
+  */
+  tick() {
+    var width = this.width = this.ctx.canvas.width = this.canvas.clientWidth;
+    var height = this.height = this.ctx.canvas.height = this.canvas.clientHeight;
+    var scale = this.scale = Math.min(width, height);
+    var xPart = 1 / this.gridWidth;
+    var yPart = 1 / this.gridHeight;
+
+    for(var id in this.touches) {
+      var touch = this.touches[id];
+      if(touch.drag) {
+        var axis = Math.abs(touch.end.x - touch.start.x) <
+          Math.abs(touch.end.y - touch.start.y);
+      }
+    }
+
+  }
+
+  /**
+    Renders the game
+  */
+  draw() {
+    var ctx = this.ctx;
+    var width = this.canvas.clientWidth;
+    var height = this.canvas.clientHeight;
+    var xPart = 1 / this.gridWidth;
+    var yPart = 1 / this.gridHeight;
+
+    ctx.save();
+
+    // background
+    ctx.fillStyle = this.colors.bg;
+    ctx.fillRect(0, 0, width, height);
+
+    // center and the canvas
+    ctx.translate(width/2, height/2);
+    ctx.scale(this.scale, this.scale);
+
+    for(var x = 0; x < this.gridWidth; x++) {
+      for(var y = 0; y < this.gridHeight; y++) {
+        var cell = this.grid[x][y];
+        cell.slide = 0;
+        cell.touch = undefined;
+        cell.delta -= cell.delta * 10 * this.deltaTime
+      }
+    }
+
+    // slide calculations for multiple touches
+    for(var id in this.touches) {
+      var touch = this.touches[id];
+      if(touch.drag) {
+        var axis = Math.abs(touch.end.x - touch.start.x) <
+          Math.abs(touch.end.y - touch.start.y) ? 1 : 0;
+        /*ctx.strokeStyle = "#000";
+        ctx.lineWidth = 0.01;
+        ctx.beginPath();
+
+        ctx.moveTo(touch.start.x, touch.start.y);
+        ctx.lineTo(
+          axis ? touch.start.x : touch.end.x,
+          !axis ? touch.start.y : touch.end.y
+        );
+        ctx.stroke();*/
+
+        var startX = Math.floor(touch.start.x/xPart + this.gridWidth / 2)
+        var startY = Math.floor(touch.start.y/yPart + this.gridHeight / 2)
+        startX = Math.max(Math.min(this.gridWidth-1, startX), 0)
+        startY = Math.max(Math.min(this.gridHeight-1, startY), 0)
+        var x = (touch.end.x-touch.start.x)/xPart
+        var y = (touch.end.y-touch.start.y)/yPart
+        
+        // checking to see if a row is already being slid
+        var canSlide = true;
+        for(var i = 0; i < (axis ? this.gridHeight : this.gridWidth); i++) {
+          var cell = this.grid
+            [((startX + i) * (1-axis)) % this.gridWidth]
+            [((startY + i) * (axis)) % this.gridHeight];
+          if(cell.slide) {
+            canSlide = false;
+            break;
+          }
+        }
+        if(!canSlide)
+          continue;
+
+        // make slide a positive number between 0 and gridWidth/gridHeight
+        var slide = axis ? y : x;
+        while(slide < 0)
+          slide += axis ? this.gridHeight : this.gridWidth;
+        slide %= axis ? this.gridHeight : this.gridWidth;
+
+        for(var i = 0; i < (axis ? this.gridHeight : this.gridWidth); i++) {
+          var cell = this.grid
+            [(startX + i * (1-axis)) % this.gridWidth]
+            [(startY + i * (axis)) % this.gridHeight];
+          cell.slide = slide;
+          cell.touch = id
+          cell.slideAxis = 1-axis;
+        }
+      }
+    }
+
+    // circle for starting pos
+    ctx.beginPath();
+    ctx.arc(
+      (-0.5 - this.gridWidth / 2 + 0.5) * xPart,
+      (this.startPos - this.gridHeight / 2 + 0.5) * yPart,
+      yPart * 0.125,
+      0,
+      6.29
+    );
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 0.06;
+    ctx.stroke();
+    ctx.strokeStyle = '#afa';
+    ctx.lineWidth = 0.04;
+    ctx.stroke();
+    ctx.fill();
+
+    // circle for ending pos
+    ctx.beginPath();
+    ctx.arc(
+      (-0.5 + this.gridWidth / 2 + 0.5) * xPart,
+      (this.endPos - this.gridHeight / 2 + 0.5) * yPart,
+      yPart * 0.125,
+      0,
+      6.29
+    );
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 0.06;
+    ctx.stroke();
+    ctx.strokeStyle = '#faa';
+    ctx.lineWidth = 0.04;
+    ctx.stroke();
+    ctx.fill();
+
+    // rendering the grid
+    for(var x = 0; x < this.gridWidth; x++) {
+      for(var y = 0; y < this.gridHeight; y++) {
+        var cell = this.grid[x][y];
+        
+        var xOff = (x + cell.slide * cell.slideAxis + cell.delta * cell.deltaAxis) % this.gridWidth;
+        var yOff = (y + cell.slide * (1-cell.slideAxis) + cell.delta * (1-cell.deltaAxis)) % this.gridHeight
+
+        var onEdge = false;
+        // checking if the cell is being dragged off of the grid
+        if(cell.slideAxis) {
+          if(xOff > this.gridWidth - 1 || xOff < 0) {
+            onEdge = true;
+          }
+        } else {
+          if(yOff > this.gridHeight - 1 || yOff < 0) {
+            onEdge = true;
+          }
+        }
+
+
+        var grad = Math.cos(((cell.slide+cell.delta) % 1) * Math.PI) * 0.5 + 0.5;
+        this.drawCell(
+          xOff,
+          yOff,
+          cell.connectors,
+          cell.connected,
+          onEdge ? grad : 1
+        );
+
+        // if the cell is dragged off the edge, draw a second copy
+        if(onEdge) {
+          this.drawCell(
+            xOff-this.gridWidth * cell.slideAxis,
+            yOff-this.gridHeight * (1-cell.slideAxis),
+            cell.connectors,
+            cell.connected,
+            1-grad
+          );
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  drawCell(x, y, connectors, connected, grad) {
+    var xPart = 1 / this.gridWidth;
+    var yPart = 1 / this.gridHeight;
+    var len = connected ? 0.5 : 0.25;
+
+    var ctx = this.ctx;
+    ctx.globalAlpha = 0.2 * grad;
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(
+      (x - this.gridWidth / 2) * xPart + 0.01,
+      (y - this.gridHeight / 2) * yPart + 0.01,
+      xPart - 0.02,
+      yPart - 0.02
+    );
+    ctx.globalAlpha = grad;
+    ctx.lineWidth = 0.01;
+    ctx.strokeStyle = connected ? '#fff' : '#777';
+    ctx.beginPath();
+    ctx.moveTo(
+      (x + connectors[0].x * len - this.gridWidth / 2 + 0.5) * xPart,
+      (y + connectors[0].y * len - this.gridHeight / 2 + 0.5) * yPart
+    )
+    ctx.lineTo(
+      (x - this.gridWidth / 2 + 0.5) * xPart,
+      (y - this.gridHeight / 2 + 0.5) * yPart
+    )
+    ctx.lineTo(
+      (x + connectors[1].x * len - this.gridWidth / 2 + 0.5) * xPart,
+      (y + connectors[1].y * len - this.gridHeight / 2 + 0.5) * yPart
+    )
+    ctx.stroke();
+  }
+
+  randConnectors() {
+    var dirs = [
+      [{x: -1, y: 0},{x: 1, y: 0}], // horiz straight
+      [{x: -1, y: 0},{x: 0, y: 1}], // left up
+      [{x: -1, y: 0},{x: 0, y: -1}], // left down
+      [{x: 0, y: -1},{x: 0, y: 1}], // vert straight
+      [{x: 1, y: 0},{x: 0, y: 1}], // right up
+      [{x: 1, y: 0},{x: 0, y: -1}], // right down
+    ]
+    return dirs[Math.floor(Math.random() * dirs.length)];
+  }
+}
+
+return new Pip(canvas, GRID_WIDTH, GRID_HEIGHT).start()
+
+})();
+  </script>
+  </body>
+</html>
