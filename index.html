@@ -148,6 +148,7 @@ class Pip {
       this.touches.mouse.end = this.screenToGame(event.pageX, event.pageY);
     }
 
+    this.recheckGrid();
   }
 
   /**
@@ -209,6 +210,8 @@ class Pip {
     var lastPos = {x: -1, y: this.startPos};
     while(this.checkCellLink(currPos, lastPos)) {
       var cell = this.grid[currPos.x][currPos.y]
+      if(cell.slide)
+        break;
       cell.connected = true;
       lastPos = currPos;
       currPos = this.nextCell(currPos.x, currPos.y);
