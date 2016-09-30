@@ -84,6 +84,8 @@ class Pip {
         moves.push({x: i, y: loc})
       }
     }
+
+    this.lightPos = moves[Math.floor(moves.length/2)]
     
     this.grid[moves[0].x][moves[0].y].connectors = [];
 
@@ -280,17 +282,20 @@ class Pip {
     }
     var currPos = {x: 0, y: this.startPos};
     var lastPos = {x: -1, y: this.startPos};
+    var hasLight = false;
     while(this.checkCellLink(currPos, lastPos)) {
       var cell = this.grid[currPos.x][currPos.y]
       if(cell.slide)
         break;
+      if(currPos.x == this.lightPos.x && currPos.y == this.lightPos.y)
+        hasLight = true;
       if(!noreset)
         cell.seen = true;
       cell.connected = true;
       lastPos = currPos;
       currPos = this.nextCell(currPos.x, currPos.y);
     }
-    if(!noreset && this.checkCellLink(lastPos, {x: this.gridWidth, y: this.endPos})) {
+    if(!noreset && hasLight && this.checkCellLink(lastPos, {x: this.gridWidth, y: this.endPos})) {
       this.resetGrid(true);
     }
   }
@@ -535,6 +540,24 @@ class Pip {
     ctx.stroke();
     ctx.fill();
 
+    // circle for light pos
+    ctx.beginPath();
+    ctx.arc(
+      (this.lightPos.x - this.gridWidth / 2 + 0.5) * xPart,
+      (this.lightPos.y - this.gridHeight / 2 + 0.5) * yPart,
+      yPart * 0.125,
+      0,
+      6.29
+    );
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 0.06;
+    ctx.stroke();
+    ctx.strokeStyle = '#ffa';
+    ctx.lineWidth = 0.04;
+    ctx.stroke();
+    ctx.fill();
+
     // circle for ending pos
     ctx.beginPath();
     ctx.arc(
@@ -617,8 +640,8 @@ class Pip {
       yPart - 0.02
     );
 
-    if(!connected && !seen)
-      return;
+    //if(!connected && !seen)
+    //  return;
 
     ctx.globalAlpha = grad;
     ctx.lineWidth = 0.01;
