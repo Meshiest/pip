@@ -39,7 +39,7 @@ class Pip {
       bg: "#ccccee"
     };
 
-    this.resetGrid()
+    this.resetGrid();
 
     this.touches = {};  
     this.initListeners();
@@ -56,6 +56,7 @@ class Pip {
         this.grid[x][y] = {
           connectors: this.randConnectors(),
           connected: false,
+          seen: false,
           slide: 0,
           slideAxis: 0,
           delta: 0,
@@ -70,7 +71,58 @@ class Pip {
       this.startPos = Math.floor(Math.random() * this.gridHeight);
     this.endPos = Math.floor(Math.random() * this.gridHeight);
 
-    this.recheckGrid();
+    var loc = this.startPos;
+    var moves = [];
+    for(var i = 0; i < this.gridWidth; i++) {
+      moves.push({x: i, y: loc})
+      var goal = Math.floor(Math.random() * this.gridHeight);
+      if(i == this.gridWidth-1)
+        goal = this.endPos;
+      var delta = goal-loc;
+      for(var j = 0; j < Math.abs(delta); j++) {
+        loc += Math.sign(delta);
+        moves.push({x: i, y: loc})
+      }
+    }
+    
+    this.grid[moves[0].x][moves[0].y].connectors = [];
+
+    for(var i = 0; i < moves.length; i++) {
+      var move = moves[i];
+      var conns = this.grid[move.x][move.y].connectors;
+      var nextMove;
+      var nextConns;
+      if(i < moves.length - 1) {
+        nextMove = moves[i+1];
+        nextConns = this.grid[nextMove.x][nextMove.y].connectors = [];
+        nextConns.push({
+          x: Math.sign(move.x - nextMove.x),
+          y: Math.sign(move.y - nextMove.y)
+        })
+      }
+      if(i == 0) {
+        conns.push({x: -1, y: 0});
+      }
+
+      conns.push({
+        x: Math.sign(nextMove.x - move.x),
+        y: Math.sign(nextMove.y - move.y)
+      })
+
+      if(i == moves.length - 1) {
+        conns[1] = {x: 1, y: 0}
+      }
+    }
+
+    var complete = true;
+    for(var i = 0; i < 4 || complete; i++) {
+      complete = this.shiftGrid(i % this.gridWidth, Math.floor(Math.random()*this.gridHeight), true)
+    }
+    for(var i = 0; i < 4 || complete; i++) {
+      complete = this.shiftGrid(Math.floor(Math.random()*this.gridWidth), i % this.gridHeight, false)
+    }
+
+    this.recheckGrid(true);
   }
 
   /**
@@ -198,9 +250,29 @@ class Pip {
   }
 
   /**
+    Shifts the table in the direction specified
+  */
+  shiftGrid(x, y, dir) {
+    while(x < 0)
+      x += this.gridWidth;
+    while(y < 0)
+      y += this.gridHeight;
+
+    var copy = JSON.parse(JSON.stringify(this.grid));
+    for(var i = 0; i < (dir ? this.gridWidth : this.gridHeight); i++) {
+      if(dir) {
+        this.grid[x][i] = copy[x][(i + y) % this.gridWidth];
+      } else {
+        this.grid[i][y] = copy[(i + x) % this.gridHeight][y];
+      }
+    }
+    return this.recheckGrid(true);
+  }
+
+  /**
     Recalculates the current path from start
   */
-  recheckGrid() {
+  recheckGrid(noreset) {
     for(var x = 0; x < this.gridWidth; x++) {
       for(var y = 0; y < this.gridHeight; y++) {
         this.grid[x][y].connected = false;
@@ -212,12 +284,13 @@ class Pip {
       var cell = this.grid[currPos.x][currPos.y]
       if(cell.slide)
         break;
+      if(!noreset)
+        cell.seen = true;
       cell.connected = true;
       lastPos = currPos;
       currPos = this.nextCell(currPos.x, currPos.y);
     }
-    console.log(lastPos, {x: this.gridWidth, y: this.endPos})
-    if(this.checkCellLink(lastPos, {x: this.gridWidth, y: this.endPos})) {
+    if(!noreset && this.checkCellLink(lastPos, {x: this.gridWidth, y: this.endPos})) {
       this.resetGrid(true);
     }
   }
@@ -501,13 +574,15 @@ class Pip {
         }
 
 
+
         var grad = Math.cos(((cell.slide+cell.delta) % 1) * Math.PI) * 0.5 + 0.5;
         this.drawCell(
           xOff,
           yOff,
           cell.connectors,
           cell.connected,
-          onEdge ? grad : 1
+          onEdge ? grad : 1,
+          cell.seen
         );
 
         // if the cell is dragged off the edge, draw a second copy
@@ -517,7 +592,8 @@ class Pip {
             yOff-this.gridHeight * (1-cell.slideAxis),
             cell.connectors,
             cell.connected,
-            1-grad
+            1-grad,
+            cell.seen
           );
         }
       }
@@ -526,7 +602,7 @@ class Pip {
     ctx.restore();
   }
 
-  drawCell(x, y, connectors, connected, grad) {
+  drawCell(x, y, connectors, connected, grad, seen) {
     var xPart = 1 / this.gridWidth;
     var yPart = 1 / this.gridHeight;
     var len = connected ? 0.5 : 0.25;
@@ -540,6 +616,10 @@ class Pip {
       xPart - 0.02,
       yPart - 0.02
     );
+
+    if(!connected && !seen)
+      return;
+
     ctx.globalAlpha = grad;
     ctx.lineWidth = 0.01;
     ctx.strokeStyle = connected ? '#fff' : '#777';
