@@ -295,9 +295,13 @@ class Pip {
       lastPos = currPos;
       currPos = this.nextCell(currPos.x, currPos.y);
     }
-    if(!noreset && hasLight && this.checkCellLink(lastPos, {x: this.gridWidth, y: this.endPos})) {
-      this.resetGrid(true);
+    if(hasLight && this.checkCellLink(lastPos, {x: this.gridWidth, y: this.endPos})) {
+      if(!noreset)
+        this.resetGrid(true);
+      else
+        return true;
     }
+    return false;
   }
 
   /**
