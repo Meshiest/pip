@@ -69,13 +69,13 @@ class Pip {
       this.startPos = this.endPos;
     else
       this.startPos = Math.floor(Math.random() * this.gridHeight);
-    this.endPos = Math.floor(Math.random() * this.gridHeight);
+    this.endPos = (this.startPos + Math.floor(Math.random() * (this.gridHeight - 1)) + 1) % this.gridHeight;
 
     var loc = this.startPos;
     var moves = [];
     for(var i = 0; i < this.gridWidth; i++) {
       moves.push({x: i, y: loc})
-      var goal = Math.floor(Math.random() * this.gridHeight);
+      var goal = (loc + Math.floor(Math.random() * (this.gridHeight - 1)) + 1) % this.gridHeight;
       if(i == this.gridWidth-1)
         goal = this.endPos;
       var delta = goal-loc;
