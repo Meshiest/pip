@@ -74,18 +74,18 @@ class Pip {
     var loc = this.startPos;
     var moves = [];
     for(var i = 0; i < this.gridWidth; i++) {
-      moves.push({x: i, y: loc})
+      moves.push({x: i, y: loc});
       var goal = (loc + Math.floor(Math.random() * (this.gridHeight - 1)) + 1) % this.gridHeight;
       if(i == this.gridWidth-1)
         goal = this.endPos;
       var delta = goal-loc;
       for(var j = 0; j < Math.abs(delta); j++) {
         loc += Math.sign(delta);
-        moves.push({x: i, y: loc})
+        moves.push({x: i, y: loc});
       }
     }
 
-    this.lightPos = moves[Math.floor(moves.length/2)]
+    this.lightPos = moves[Math.floor(moves.length/2)];
     
     this.grid[moves[0].x][moves[0].y].connectors = [];
 
@@ -100,28 +100,28 @@ class Pip {
         nextConns.push({
           x: Math.sign(move.x - nextMove.x),
           y: Math.sign(move.y - nextMove.y)
-        })
+        });
       }
-      if(i == 0) {
+      if(i === 0) {
         conns.push({x: -1, y: 0});
       }
 
       conns.push({
         x: Math.sign(nextMove.x - move.x),
         y: Math.sign(nextMove.y - move.y)
-      })
+      });
 
       if(i == moves.length - 1) {
-        conns[1] = {x: 1, y: 0}
+        conns[1] = {x: 1, y: 0};
       }
     }
 
     var complete = true;
     for(var i = 0; i < 4 || complete; i++) {
-      complete = this.shiftGrid(i % this.gridWidth, Math.floor(Math.random()*this.gridHeight), true)
+      complete = this.shiftGrid(i % this.gridWidth, Math.floor(Math.random()*this.gridHeight), true);
     }
     for(var i = 0; i < 4 || complete; i++) {
-      complete = this.shiftGrid(Math.floor(Math.random()*this.gridWidth), i % this.gridHeight, false)
+      complete = this.shiftGrid(Math.floor(Math.random()*this.gridWidth), i % this.gridHeight, false);
     }
 
     this.recheckGrid(true);
@@ -140,13 +140,13 @@ class Pip {
 
     var pip = this;
     if(supportsTouch) {
-      canvas.addEventListener('touchstart', (e)=>{pip.onDragStart(e)})
-      canvas.addEventListener('touchmove', (e)=>{pip.onDrag(e)})
-      canvas.addEventListener('touchend', (e)=>{pip.onDragEnd(e)})
+      canvas.addEventListener('touchstart', (e)=>{pip.onDragStart(e)});
+      canvas.addEventListener('touchmove', (e)=>{pip.onDrag(e)});
+      canvas.addEventListener('touchend', (e)=>{pip.onDragEnd(e)});
     }
-    canvas.addEventListener('mousedown', (e)=>{pip.onDragStart(e)})
-    canvas.addEventListener('mousemove', (e)=>{pip.onDrag(e)})
-    canvas.addEventListener('mouseup', (e)=>{pip.onDragEnd(e)})
+    canvas.addEventListener('mousedown', (e)=>{pip.onDragStart(e)});
+    canvas.addEventListener('mousemove', (e)=>{pip.onDrag(e)});
+    canvas.addEventListener('mouseup', (e)=>{pip.onDragEnd(e)});
   }
 
   /**
@@ -159,7 +159,7 @@ class Pip {
     return {
       x: (x - width/2) / scale,
       y: (y - height/2) / scale
-    }
+    };
   }
 
   /**
@@ -228,7 +228,7 @@ class Pip {
   */
   handleDragEnd(id) {
     var touch = this.touches[id];
-    var copy = JSON.parse(JSON.stringify(this.grid))
+    var copy = JSON.parse(JSON.stringify(this.grid));
     for(var x = 0; x < this.gridWidth; x++) {
       for(var y = 0; y < this.gridHeight; y++) {
         var cell = copy[x][y];
@@ -284,7 +284,7 @@ class Pip {
     var lastPos = {x: -1, y: this.startPos};
     var hasLight = false;
     while(this.checkCellLink(currPos, lastPos)) {
-      var cell = this.grid[currPos.x][currPos.y]
+      var cell = this.grid[currPos.x][currPos.y];
       if(cell.slide)
         break;
       if(currPos.x == this.lightPos.x && currPos.y == this.lightPos.y)
@@ -397,9 +397,8 @@ class Pip {
   start() {
     this.stop();
     var pip = this;
-    this.interval = setInterval(function(){
-      pip.loop();
-    }, 0);
+    this.running = true;
+    window.requestAnimationFrame(this.loop.bind(this));
     return this;
   }
 
@@ -407,7 +406,7 @@ class Pip {
     Stops the game
   */
   stop() {
-    clearInterval(this.interval);
+    this.running = false;
     return this;
   }
 
@@ -415,11 +414,14 @@ class Pip {
     Called every interval
   */
   loop() {
+    if(!this.running)
+      return;
     var now = Date.now();
     this.deltaTime = (now - this.time) / 1000;
     this.time = now;
     this.tick();
     this.draw();
+    window.requestAnimationFrame(this.loop.bind(this));
   }
 
   /**
